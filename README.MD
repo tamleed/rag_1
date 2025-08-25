@@ -1,60 +1,76 @@
-# Simple RAG Search API with FastAPI and ChromaDB
+# RAG Search API with FastAPI and Standalone ChromaDB
 
-This project is a simple Retrieval-Augmented Generation (RAG) search API built using FastAPI. It uses `sentence-transformers` to create vector embeddings from a data source and stores them in ChromaDB for efficient similarity searching.
+This project provides a simple Retrieval-Augmented Generation (RAG) search API using FastAPI. It uses `sentence-transformers` to create vector embeddings and stores them in a **standalone ChromaDB server**, making the database accessible to other applications on the network.
+
+This entire application stack is designed to be run with Docker Compose.
 
 ## Project Structure
 
-- `app/main.py`: The main FastAPI application containing the `/search` endpoint.
-- `app/ingest.py`: A script to process a data source (`data.csv`), create embeddings, and store them in ChromaDB.
+- `app/`: Contains the main FastAPI application source code.
+- `Dockerfile`: Defines the container for the FastAPI application.
+- `docker-compose.yml`: Orchestrates the API and ChromaDB services.
 - `data.csv`: Sample data for the project.
 - `requirements.txt`: Python dependencies.
 
-## Setup
+## How to Run with Docker
 
-1. **Clone the repository:**
-   ```bash
-   git clone <repository-url>
-   cd <repository-name>
-   ```
+This is the recommended way to run the project.
 
-2. **Install dependencies:**
-   Make sure you have Python 3.8+ installed. Then, install the required packages.
-   ```bash
-   pip install -r requirements.txt
-   ```
+**Prerequisites:**
+- Docker and Docker Compose installed.
 
-## How to Run
+**Steps:**
 
-There are two main steps: first ingest the data, then run the API server.
+1.  **Build and Start the Services:**
+    From the root directory of the project, run:
+    ```bash
+    docker-compose up --build
+    ```
+    This will:
+    - Build the Docker image for the FastAPI `api` service.
+    - Pull the official Docker image for the `chroma` service.
+    - Start both containers and connect them on a shared network.
 
-**1. Ingest Data**
+    The API will be available at `http://localhost:8000`.
+    The ChromaDB server will be available at `http://localhost:8001`.
 
-Run the ingestion script from the root directory of the project. This script will read `data.csv`, generate embeddings for the titles, and store them in a local ChromaDB database located at `./chroma_db`.
+2.  **Ingest the Data:**
+    Once the services are running, open a **new terminal window** and run the ingestion script. This only needs to be done once.
+    ```bash
+    python -m app.ingest
+    ```
+    This script will connect to the ChromaDB server running in Docker and populate it with the data from `data.csv`.
 
-```bash
-python -m app.ingest
+3.  **Use the API:**
+    The search endpoint is now active. You can use `curl` or any HTTP client to send requests:
+    ```bash
+    curl "http://localhost:8000/search/?q=healthy%20living"
+    ```
+
+## Connecting from an External Application (e.g., Jupyter Notebook)
+
+Because ChromaDB is running as a standalone service, you can connect to it from any other application that can reach it (e.g., from your host machine).
+
+**Connection Details:**
+- **Host:** `localhost`
+- **Port:** `8001`
+
+**Example Python Code:**
+```python
+import chromadb
+
+# Connect to the running ChromaDB server
+client = chromadb.HttpClient(host="localhost", port=8001)
+
+# Get the collection
+collection = client.get_collection("news_1")
+
+# Query the collection
+results = collection.query(
+    query_texts=["space exploration"],
+    n_results=2
+)
+
+print(results)
 ```
-
-You should see output confirming that records have been loaded and stored. You only need to do this once.
-
-**2. Run the API Server**
-
-Run the FastAPI application using `uvicorn`.
-
-```bash
-uvicorn app.main:app --reload
-```
-
-The server will be available at `http://127.0.0.1:8000`.
-
-## How to Use
-
-Once the server is running, you can send `GET` requests to the `/search` endpoint with a query `q`.
-
-Here is an example using `curl`:
-
-```bash
-curl "http://127.0.0.1:8000/search/?q=healthy%20living"
-```
-
-This will return a JSON object with the most relevant search results from the data, including the document, its metadata, and the search distance.
+This demonstrates how you can now interact with the same database used by the API from a completely separate process.

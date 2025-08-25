@@ -1,7 +1,7 @@
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 import chromadb
-from app.config import DB_PATH, COLLECTION_NAME, MODEL_NAME
+from app.config import COLLECTION_NAME, MODEL_NAME, CHROMA_HOST, CHROMA_PORT
 
 def load_data(file_path="data.csv"):
     """Loads data from a CSV file."""
@@ -17,9 +17,12 @@ def create_embeddings(df, model_name=MODEL_NAME):
     return df
 
 def store_in_chroma(df):
-    """Stores data and embeddings in ChromaDB."""
-    client = chromadb.PersistentClient(path=DB_PATH)
+    """Stores data and embeddings in a remote ChromaDB server."""
+    client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+    print(f"Connecting to ChromaDB at {CHROMA_HOST}:{CHROMA_PORT}...")
+
     collection = client.get_or_create_collection(COLLECTION_NAME)
+    print(f"Ingesting {len(df)} records into collection '{COLLECTION_NAME}'...")
 
     collection.add(
         ids=[str(i) for i in df.index],
@@ -27,11 +30,7 @@ def store_in_chroma(df):
         documents=df["title"].tolist(),
         metadatas=[{"url": url, "category": cat} for url, cat in zip(df["url"], df["category"])],
     )
-    print(f"Stored {len(df)} records in ChromaDB collection '{COLLECTION_NAME}'.")
-
-    # Verify the count
-    count = collection.count()
-    print(f"Verification: Collection '{COLLECTION_NAME}' now contains {count} items.")
+    print(f"Successfully stored {collection.count()} records.")
 
 if __name__ == "__main__":
     data_df = load_data()

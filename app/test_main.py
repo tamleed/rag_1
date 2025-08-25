@@ -1,3 +1,6 @@
+import os
+os.environ['ENV'] = 'TEST'
+
 import pytest
 from fastapi.testclient import TestClient
 import shutil

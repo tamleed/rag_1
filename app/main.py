@@ -1,27 +1,36 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
 import chromadb
 from sentence_transformers import SentenceTransformer
 from typing import Dict, Any
 
-from app.config import DB_PATH, COLLECTION_NAME, MODEL_NAME
+from app.config import COLLECTION_NAME, MODEL_NAME, CHROMA_HOST, CHROMA_PORT
 
 # A dictionary to hold the state of the application
-# This is a simple way to share objects like models or db connections
-# across the application's lifespan.
 state: Dict[str, Any] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     A context manager to handle the startup and shutdown of the application.
-    This is where we will load our model and database client.
     """
     print("RAG service starting up...")
+
+    # Load the model, which is needed in all environments
     state["model"] = SentenceTransformer(MODEL_NAME)
-    state["client"] = chromadb.PersistentClient(path=DB_PATH)
-    print("Model and DB client loaded.")
+
+    # Connect to ChromaDB only if not in a test environment
+    if os.getenv("ENV") != "TEST":
+        print(f"Connecting to ChromaDB at {CHROMA_HOST}:{CHROMA_PORT}...")
+        state["client"] = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+        print("DB client connected.")
+    else:
+        print("Running in TEST mode. Skipping remote DB connection in lifespan.")
+        state["client"] = None # In tests, this will be handled by dependency overrides
+
     yield
+
     # Code to run on shutdown
     print("RAG service shutting down...")
     state.clear()
@@ -34,12 +43,21 @@ def get_model() -> SentenceTransformer:
     return state.get("model")
 
 def get_collection() -> chromadb.Collection:
-    """Dependency to get the ChromaDB collection."""
+    """
+    Dependency to get the ChromaDB collection.
+    In production, this uses the client from the app state.
+    In tests, this function is overridden to point to a local test DB.
+    """
+    client = state.get("client")
+    if client is None:
+        # This will happen in tests, where the override will take over.
+        # If it happens in production, it's a server error.
+        raise HTTPException(status_code=503, detail="Database client not initialized.")
+
     try:
-        collection = state["client"].get_or_create_collection(COLLECTION_NAME)
+        collection = client.get_or_create_collection(COLLECTION_NAME)
         return collection
     except Exception as e:
-        # This could happen if the client isn't initialized, etc.
         raise HTTPException(status_code=503, detail=f"Database not available: {e}")
 
 @app.get("/")
@@ -59,10 +77,7 @@ def search(
     if not q:
         raise HTTPException(status_code=400, detail="Query parameter 'q' cannot be empty.")
 
-    # Create the embedding for the query
     query_embedding = model.encode(q).tolist()
-
-    # Query the collection
     results = collection.query(query_embeddings=[query_embedding], n_results=n)
 
     return {

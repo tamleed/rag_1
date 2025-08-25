@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      - chroma
+    environment:
+      - CHROMA_HOST=chroma
+      - CHROMA_PORT=8000
+    networks:
+      - rag_network
+
+  chroma:
+    image: chromadb/chroma
+    ports:
+      - "8001:8000" # Exposing Chroma on host port 8001 to avoid conflict with our API
+    volumes:
+      - chroma_data:/chroma/.chroma/index
+    networks:
+      - rag_network
+
+volumes:
+  chroma_data:
+
+networks:
+  rag_network:
+    driver: bridge
